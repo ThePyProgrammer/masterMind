@@ -35,26 +35,22 @@ def check_play(ai_choice, right_choice):
 
     # local copy of color to guess as reference of already calculated colors
 
-    copy_right_choice = []
-    for code in right_choice:
-        copy_right_choice.append(code)
+    copy_right_choice = [code for code in right_choice]
 
-    copy_ai_choice = []
-    for code in ai_choice:
-        copy_ai_choice.append(code)
+    copy_ai_choice = [code for code in ai_choice]
 
     placeTrue = 0
     placeFalse = 0
 
     for i in range(len(right_choice)):
         if right_choice[i] == ai_choice[i]:
-            placeTrue = placeTrue + 1
+            placeTrue += 1
             copy_right_choice[i] = 42
             copy_ai_choice[i] = 4242
 
     for code in copy_ai_choice:
         if code in copy_right_choice:
-            placeFalse = placeFalse + 1
+            placeFalse += 1
             for i,c in enumerate(copy_right_choice):
                 if c == code:
                     copy_right_choice[i] = 42
@@ -297,8 +293,8 @@ def play(trial, turn, toFind):
 def usage():
     """usage doc"""
     print('''
-          Usage: ./gamastermind.py number_of_colors code_to_guess
-          example: ./gamastermind.py 6 1234
+          Usage: ./mind.py number_of_colors code_to_guess
+          example: ./mind.py 6 1234
           6 colors, and 4 digit code <1 2 3 4>
           ''')
 
