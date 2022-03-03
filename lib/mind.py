@@ -2,6 +2,7 @@ import np
 import re
 import pandas as pd
 from functools import reduce
+from itertools import tee, zip_longest
 
 
 def p(*size): return np.random.random(size=size if len(size) else 1)
@@ -32,7 +33,7 @@ class Chromosome:
         return self.values[i]
     
     def __setitem__(self, i, obj):
-        self.values[i] = int(obj)
+        self.values[i] = obj
         
     def randSlots(self, size=1):
         return np.random.randint(self.slots-1, size=size)
@@ -59,14 +60,14 @@ class Chromosome:
     def invert(self):
         code = self.copy()
         if p() < 0.03:
-            a, b = sorted(tuple(code.randSlots()))
+            a, b = sorted(tuple(code.randSlots(2)))
             code[a:b] = code[a:b][::-1]
         return code
     
     def scramble(self):
         code = self.copy()
         if p() < 0.03:
-            a, b = sorted(tuple(code.randSlots()))
+            a, b = sorted(tuple(code.randSlots(2)))
             code[a:b] = shuffle(code[a:b])
         return code
     
@@ -90,25 +91,48 @@ class Chromosome:
         return self.values != other.values
     
     def within(self, other):
-        return np.isin(self.values, other)
+        return np.isin(self.values, other) 
     
     def whites(self, guess):
-        return guess.within(list(set(shield[guess != shield]) & set(guess[guess != shield]))).astype(int)
+        return guess.within(list(set(self[guess != self]) & set(guess[guess != self]))).astype(int)
        
     def blacks(self, guess):
         return (self.values == guess.values)
     
     def score(self, guess):
-        return np[self == guess, self.whites(guess).sum()]
+        return np[self == guess, guess.whites(self).sum()]
     
     def mark(self, guess):
         output = np.full_like(self.values, ".", dtype=str)
-        output[self.whites(guess)] = "W"
-        output[self.blacks(guess)] = "B"
+        output[guess.whites(self)] = "W"
+        output[guess.blacks(self)] = "B"
         return output
     
+    def markWith(self, optimal):
+        guess = self.values.copy()+1
+        code = optimal.values.copy()+1
+        output = np.full_like(code, ".", dtype=str)
+        output[guess == code] = "B"
+        negatize = code * ((code != guess)*2 - 1)
+        considerations = []
+
+        for allele in guess[guess != code]:
+            result = "."
+            if allele in negatize:
+                result = "W"
+                negatize[np.argmax(negatize == allele)] = -allele
+            considerations.append(result)
+
+        output[guess != code] = considerations
+
+        return output
+    
+    def scoreWith(self, optimal):
+        output = self.markWith(optimal)
+        return np[(output == "B").sum(), (output == "W").sum()]
+    
     def fitness(self, guesses):
-        return np.array([trial.score(guess)-guess_result for (guess, guess_result) in guesses]).sum() - self.slots
+        return np.abs(np.array([self.scoreWith(guess)-guess_result for (guess, guess_result) in guesses])).sum() #- self.slots
 
     
 class ChromoSet(list):
@@ -116,8 +140,8 @@ class ChromoSet(list):
     Can be used for guesses, genotype, eligibles etc
     """
     def __init__(self, values=[]):
-        self.values = np.array([Chromosome(candidate) for candidate in np.array(values).tolist()], dtype=Chromosome)
-        super().__init__(self.values.tolist())
+        self.values = [Chromosome(candidate) for candidate in np.array(values).tolist()]
+        super().__init__(self.values)
         
     def __gt__(self, other):
         return len(self) > len(other)
@@ -132,7 +156,10 @@ class ChromoSet(list):
         return len(self) <= len(other)
     
     def filter(self, f):
-        return self.__class___([chromosome for chromosome in self if f(chromosome)])
+        return Elite([chromosome for chromosome in self if f(chromosome)])
+    
+    def tolist(self):
+        return list(map(Chromosome.tolist, self))
         
 
 class Elite(ChromoSet):
@@ -140,6 +167,10 @@ class Elite(ChromoSet):
         return Elite(list(set(self) | set(other)))
     def __sub__(self, other):
         return Elite(list(set(self) - set(other)))
+    def __str__(self):
+        return "["+", ".join(map(str, self))+"]"
+    def __repr__(self):
+        return "["+", ".join(map(str, self))+"]"
         
         
 class Genotype(ChromoSet):
@@ -147,44 +178,52 @@ class Genotype(ChromoSet):
         self.size = size
         self.slots = slots
         df = pd.DataFrame(initial)
-        while len(df) < size[0]:
+        while len(df) < size:
             pop = rand(size-len(df), slots)
-            df = pd.concat([df, pd.DataFrame(pop)]).drop_duplicates()
+            df = pd.concat([df, pd.DataFrame(pop)], ignore_index=True).drop_duplicates()
         
-        super().__init__(df.iloc[:size[0]].values)
+        super().__init__(df.iloc[:size].values)
         
     def reproduce(self):
-        lst = []
-        for i, chromosome in enumerate(self):
-            if i == len(self)-1:
-                lst.append(chromosome)
-                break
-            lst.append(chromosome.crossover(self[i+1]).mutate().invert().scramble().permute())
-        
-        return Genotype(len(lst), len(lst[0]), initial=list(map(Chromosome.tolist, lst)))
-        
-    def train(self, guesses):
-        Ei = Elite()
-        cnt = 0
-        while h <= 100 and Ei <= self:
-            children = self.reproduce().filter(lambda child: not child.fitness(guesses))
-            Ei = Ei + children
-            
-            
-            
+        a, b = tee(self)
+        next(b, None)
+        return Genotype(len(self), len(self[0]), initial=list(map(lambda chromosomes: chromosomes[0].crossover(chromosomes[1]).mutate().invert().scramble().permute().tolist(), zip_longest(a, b, fillvalue=self[-1]))))
+
+
+code_type = input("ELECTRONIC MASTERMIND 1977\nSELECT CODE TYPE: [3, 4, 5]: ").strip()
+N = int(code_type)
+
 def train(guesses):
-    pop = Genotype(150, 3)
+    pop = Genotype(150, N)
     Ei = Elite()
     cnt = 0
-    while cnt <= 100 and Ei <= self:
-        children = self.reproduce().filter(lambda child: not child.fitness(guesses))
+    while cnt <= 100 and Ei <= pop:
+        children = pop.reproduce().filter(lambda child: not child.fitness(guesses))
         if len(children):
             Ei = Ei + children
-            pop = Genotype(Ei)
+            pop = Genotype(150, N, initial=list(map(Chromosome.tolist, Ei)))
+        cnt += 1
     
     return Ei
 
+code = Chromosome(rand(N))
+init = Chromosome(rand(N))
 
+print("Guess 0:", *init)
+print(init.scoreWith(code), init.markWith(code))
+guesses = [(init, init.scoreWith(code))]
 
-        
-        
+cnt = 1
+
+while cnt <= 100 and guesses[-1][-1][0] != N:
+    Ei = train(guesses)
+    if len(Ei) == 0: continue
+    possibles = Ei - Elite([i[0].tolist() for i in guesses])
+    #print("Elites:",possibles)
+    submission = possibles[np.random.randint(len(possibles))]
+    print(f"Guess {cnt}:", *submission)
+    print(submission.scoreWith(code), submission.markWith(code))
+    guesses.append((submission, submission.scoreWith(code)))
+    cnt += 1
+    
+print("YOU WIN!")
