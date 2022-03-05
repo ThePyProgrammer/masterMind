@@ -3,7 +3,9 @@ import re
 import pandas as pd
 from functools import reduce
 from itertools import tee, zip_longest
-
+import matplotlib.pyplot as plt
+import seaborn as sns
+import time
 
 def p(*size): return np.random.random(size=size if len(size) else 1)
 
@@ -190,40 +192,60 @@ class Genotype(ChromoSet):
         return Genotype(len(self), len(self[0]), initial=list(map(lambda chromosomes: chromosomes[0].crossover(chromosomes[1]).mutate().invert().scramble().permute().tolist(), zip_longest(a, b, fillvalue=self[-1]))))
 
 
-code_type = input("ELECTRONIC MASTERMIND 1977\nSELECT CODE TYPE: [3, 4, 5]: ").strip()
-N = int(code_type)
+def run_test(N):
+    def train(guesses):
+        pop = Genotype(150, N)
+        Ei = Elite()
+        cnt = 0
+        while cnt <= 100 and Ei <= pop:
+            children = pop.reproduce().filter(lambda child: not child.fitness(guesses))
+            if len(children):
+                Ei = Ei + children
+                pop = Genotype(150, N, initial=list(map(Chromosome.tolist, Ei)))
+            cnt += 1
 
-def train(guesses):
-    pop = Genotype(150, N)
-    Ei = Elite()
-    cnt = 0
-    while cnt <= 100 and Ei <= pop:
-        children = pop.reproduce().filter(lambda child: not child.fitness(guesses))
-        if len(children):
-            Ei = Ei + children
-            pop = Genotype(150, N, initial=list(map(Chromosome.tolist, Ei)))
+        return Ei
+
+    code = Chromosome(rand(N))
+    init = Chromosome(rand(N))
+
+    print("Guess 0:", *init)
+    print(init.scoreWith(code), init.markWith(code))
+    guesses = [(init, init.scoreWith(code))]
+
+    cnt = 1
+
+    while cnt <= 100 and guesses[-1][-1][0] != N:
+        Ei = train(guesses)
+        if len(Ei) == 0: continue
+        possibles = Ei - Elite([i[0].tolist() for i in guesses])
+        #print("Elites:",possibles)
+        submission = possibles[np.random.randint(len(possibles))]
+        print(f"Guess {cnt}:", *submission)
+        print(submission.scoreWith(code), submission.markWith(code))
+        guesses.append((submission, submission.scoreWith(code)))
         cnt += 1
+
+    print("YOU WIN!")
+    return cnt
+
+data = []
+
+for N in [3,4,5]:
+    print("==================================== NUMBERS OF", N, "====================================")
+    plotData = []
+    timeData = []
+    for i in range(100):
+        print("=========================== TEST", i+1, "===========================")
+        start = time.time()
+        cnt = run_test(N)
+        end = time.time()
+        plotData.append(cnt)
+        print(end-start, "Seconds Elapsed")
+        timeData.append(end-start)
+        print("-----------------------------")
+    data.extend([plotData, timeData])
     
-    return Ei
 
-code = Chromosome(rand(N))
-init = Chromosome(rand(N))
-
-print("Guess 0:", *init)
-print(init.scoreWith(code), init.markWith(code))
-guesses = [(init, init.scoreWith(code))]
-
-cnt = 1
-
-while cnt <= 100 and guesses[-1][-1][0] != N:
-    Ei = train(guesses)
-    if len(Ei) == 0: continue
-    possibles = Ei - Elite([i[0].tolist() for i in guesses])
-    #print("Elites:",possibles)
-    submission = possibles[np.random.randint(len(possibles))]
-    print(f"Guess {cnt}:", *submission)
-    print(submission.scoreWith(code), submission.markWith(code))
-    guesses.append((submission, submission.scoreWith(code)))
-    cnt += 1
-    
-print("YOU WIN!")
+df = pd.DataFrame(data)
+df
